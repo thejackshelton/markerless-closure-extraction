@@ -1,0 +1,38 @@
+{
+  "components": {
+    "Button": {
+      "props": {
+        "onPress": "event"
+      }
+    },
+    "ConfirmDialog": {
+      "props": {
+        "onCancel": "event",
+        "onConfirm": "event"
+      }
+    },
+    "DialogActions": {
+      "props": {
+        "onPrimary": "event",
+        "onSecondary": "event"
+      }
+    },
+    "FormPanel": {
+      "props": {
+        "onReset": "event",
+        "onSubmit": "event"
+      }
+    },
+    "Toolbar": {
+      "props": {
+        "onPublish": "event",
+        "onSave": "event"
+      }
+    },
+    "ToolbarButton": {
+      "props": {
+        "onActivate": "event"
+      }
+    }
+  }
+}

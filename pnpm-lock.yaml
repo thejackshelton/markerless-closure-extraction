@@ -1,0 +1,128 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      yuku-parser:
+        specifier: 0.5.20
+        version: 0.5.20
+
+packages:
+
+  '@yuku-parser/binding-darwin-arm64@0.5.20':
+    resolution: {integrity: sha512-6oRnUCTnLSgw6jQeeTVtwYZKwuk+eIsYu9RstNv7lTHJtr6MLek9E7P2G/HFZLGCf126uO9MF2zC0PF4+a3OAg==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@yuku-parser/binding-darwin-x64@0.5.20':
+    resolution: {integrity: sha512-ztoAvg18uWrre7cZh6vEvn2PtZQ7lQKu/qkiyI+ghjbgPecgj1v6IlIS/XNnbXgwnA9c+wfHsixLJGafd54WDg==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@yuku-parser/binding-freebsd-x64@0.5.20':
+    resolution: {integrity: sha512-LS099qC27yL+35OSxhLhukelH6FCTc1EVtuihbtChjyYFwnZmLMX5hkbo6BxCa4mbvW4Kxmml35HvcnkcyaQUQ==}
+    cpu: [x64]
+    os: [freebsd]
+
+  '@yuku-parser/binding-linux-arm-gnu@0.5.20':
+    resolution: {integrity: sha512-Reykr/2UKRWIOQNdcCeBHCtmzEscdw8wCWb6xdhH6vh50MBPPc5k61DlrcGM/NMHAWH0ec9yDGgSlmal62Cbew==}
+    cpu: [arm]
+    os: [linux]
+    libc: [glibc]
+
+  '@yuku-parser/binding-linux-arm-musl@0.5.20':
+    resolution: {integrity: sha512-iVZxBXK3Ilm8HJvPkD+NKjaQzM58eBu38sxNV5/2dDGkJh2cmUO17OJKm9gfYtjNjzfj8/ZoWBCCcDo32AUihA==}
+    cpu: [arm]
+    os: [linux]
+    libc: [musl]
+
+  '@yuku-parser/binding-linux-arm64-gnu@0.5.20':
+    resolution: {integrity: sha512-b8Lw0Nynj5X7I5BOTKioqYxhJKpyLb0prG+uJmDpGNiAc697SpCQAVVX7Svn/SdOGuVCUyXJNAdFMFlUxDI9vw==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@yuku-parser/binding-linux-arm64-musl@0.5.20':
+    resolution: {integrity: sha512-hpMz9v/37LxusoISzLBE7IDSefiTSWHpQKDu/QDaUUO38/L4ZfAPVAs28wz0hEGnNoKlI6pV7hr2l23hz526zg==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@yuku-parser/binding-linux-x64-gnu@0.5.20':
+    resolution: {integrity: sha512-DC/TFG2BErcJxf/CVQoPCUEgBQ35uTHzainvKzyWMMjkN741+ZyXCLzleaToFNHlWMQKVtSjn6kq/pSSEwfR+w==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@yuku-parser/binding-linux-x64-musl@0.5.20':
+    resolution: {integrity: sha512-CRYaUKkmxWhJblRQph7zX8MQLGhLvZJgFK4wLqeBXTTiSe2OD0RU4ecpyInv27ANA8AEOALsGO8Qoo7e0ebPUg==}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@yuku-parser/binding-win32-arm64@0.5.20':
+    resolution: {integrity: sha512-CXJq5xMu9UsyUVpgfD4ZB4y15lPfDgBiccs8AU9jZw3wo+EdiHcDOWttIoh3YMVMRifOw2OX2M7JFvc8DjfOsw==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@yuku-parser/binding-win32-x64@0.5.20':
+    resolution: {integrity: sha512-CyGrpFyoyv7jCsqMJuPmoN+B2kpVRxDvW0C0FQGBwNH04Zw1UGWd3FY6LaimGzLVLFLFgCInHsl/M3COifc78Q==}
+    cpu: [x64]
+    os: [win32]
+
+  yuku-parser@0.5.20:
+    resolution: {integrity: sha512-tkzduErGtH7CVrm0VFwwu2YCYSrHzhK5+pIgI63twFqHDH5J9E78wqo7DLTTkmd904/FVJKw0m+HFxRbiSU8Hw==}
+
+snapshots:
+
+  '@yuku-parser/binding-darwin-arm64@0.5.20':
+    optional: true
+
+  '@yuku-parser/binding-darwin-x64@0.5.20':
+    optional: true
+
+  '@yuku-parser/binding-freebsd-x64@0.5.20':
+    optional: true
+
+  '@yuku-parser/binding-linux-arm-gnu@0.5.20':
+    optional: true
+
+  '@yuku-parser/binding-linux-arm-musl@0.5.20':
+    optional: true
+
+  '@yuku-parser/binding-linux-arm64-gnu@0.5.20':
+    optional: true
+
+  '@yuku-parser/binding-linux-arm64-musl@0.5.20':
+    optional: true
+
+  '@yuku-parser/binding-linux-x64-gnu@0.5.20':
+    optional: true
+
+  '@yuku-parser/binding-linux-x64-musl@0.5.20':
+    optional: true
+
+  '@yuku-parser/binding-win32-arm64@0.5.20':
+    optional: true
+
+  '@yuku-parser/binding-win32-x64@0.5.20':
+    optional: true
+
+  yuku-parser@0.5.20:
+    optionalDependencies:
+      '@yuku-parser/binding-darwin-arm64': 0.5.20
+      '@yuku-parser/binding-darwin-x64': 0.5.20
+      '@yuku-parser/binding-freebsd-x64': 0.5.20
+      '@yuku-parser/binding-linux-arm-gnu': 0.5.20
+      '@yuku-parser/binding-linux-arm-musl': 0.5.20
+      '@yuku-parser/binding-linux-arm64-gnu': 0.5.20
+      '@yuku-parser/binding-linux-arm64-musl': 0.5.20
+      '@yuku-parser/binding-linux-x64-gnu': 0.5.20
+      '@yuku-parser/binding-linux-x64-musl': 0.5.20
+      '@yuku-parser/binding-win32-arm64': 0.5.20
+      '@yuku-parser/binding-win32-x64': 0.5.20

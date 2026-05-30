@@ -1,0 +1,15 @@
+{
+  "name": "markerless-closure-extraction",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "poc": "node scripts/poc.mjs",
+    "test": "node scripts/test.mjs",
+    "ollama:smoke": "node scripts/ollama-smoke.mjs",
+    "bench:ollama": "node scripts/bench-ollama.mjs"
+  },
+  "dependencies": {
+    "yuku-parser": "0.5.20"
+  }
+}

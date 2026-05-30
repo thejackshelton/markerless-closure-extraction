@@ -1,0 +1,41 @@
+{
+  "description": "Deterministic mock classifier fixtures. These stand in for possible LLM-style boundary classification during inference only; build/report steps consume the persisted manifest.",
+  "fixtures": [
+    {
+      "id": "jsx-attribute:button:onClick",
+      "input": {
+        "tag": "button",
+        "attribute": "onClick",
+        "reason": "Yuku AST shows a component prop is wired into this host JSX attribute."
+      },
+      "output": {
+        "kind": "event",
+        "confidence": "fixture"
+      }
+    },
+    {
+      "id": "jsx-attribute:form:onSubmit",
+      "input": {
+        "tag": "form",
+        "attribute": "onSubmit",
+        "reason": "Yuku AST shows a component prop is wired into this host JSX attribute."
+      },
+      "output": {
+        "kind": "event",
+        "confidence": "fixture"
+      }
+    },
+    {
+      "id": "component-prop:UnknownButton:onPress",
+      "input": {
+        "component": "UnknownButton",
+        "prop": "onPress",
+        "reason": "Ambiguous callback-like prop name with no classifier-labeled boundary surface."
+      },
+      "output": {
+        "kind": "event",
+        "confidence": "fixture"
+      }
+    }
+  ]
+}
