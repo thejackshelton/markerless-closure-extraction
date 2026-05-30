@@ -1,5 +1,6 @@
 import {
   SCENARIOS,
+  boundaryLabels,
   entriesEqual,
   evaluateScenario,
   scenarioResultSummary
@@ -8,27 +9,31 @@ import {
 let failures = 0;
 let totalBoundaries = 0;
 let totalClosures = 0;
+let totalUnknowns = 0;
 
 console.log(`scenario suite: ${SCENARIOS.length} cases`);
 
 for (const scenario of SCENARIOS) {
   const result = evaluateScenario(scenario);
-  const boundaryPass = entriesEqual(result.actualBoundaries, result.expectedBoundaries);
+  const boundaryPass = entriesEqual(boundaryLabels(result.actualBoundaries), result.expectedBoundaries);
   const closurePass = entriesEqual(result.actualExtractableClosures, result.expectedExtractableClosures);
+  const unknownPass = entriesEqual(result.actualUnknowns, result.expectedUnknowns);
   const summary = scenarioResultSummary(result);
 
   totalBoundaries += result.actualBoundaries.length;
   totalClosures += result.actualExtractableClosures.length;
+  totalUnknowns += result.actualUnknowns.length;
 
   console.log(
     JSON.stringify({
       ...summary,
       boundaries: boundaryPass ? "pass" : "fail",
-      closures: closurePass ? "pass" : "fail"
+      closures: closurePass ? "pass" : "fail",
+      unknowns: unknownPass ? "pass" : "fail"
     })
   );
 
-  if (!boundaryPass || !closurePass) {
+  if (!boundaryPass || !closurePass || !unknownPass) {
     failures += 1;
     console.log("expected boundaries:");
     console.log(JSON.stringify(result.expectedBoundaries, null, 2));
@@ -38,6 +43,10 @@ for (const scenario of SCENARIOS) {
     console.log(JSON.stringify(result.expectedExtractableClosures, null, 2));
     console.log("actual extractable closures:");
     console.log(JSON.stringify(result.actualExtractableClosures, null, 2));
+    console.log("expected unknowns:");
+    console.log(JSON.stringify(result.expectedUnknowns, null, 2));
+    console.log("actual unknowns:");
+    console.log(JSON.stringify(result.actualUnknowns, null, 2));
   }
 }
 
@@ -48,6 +57,7 @@ console.log(
       scenarios: SCENARIOS.length,
       failures,
       totalBoundaries,
+      totalUnknowns,
       totalExtractableClosures: totalClosures
     },
     null,

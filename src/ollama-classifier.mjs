@@ -32,9 +32,13 @@ export const BOUNDARY_MANIFEST_PATCH_SCHEMA = {
               kind: {
                 type: "string",
                 enum: ["event", "server", "resource", "unknown"]
+              },
+              evidence: {
+                type: "array",
+                items: { type: "string" }
               }
             },
-            required: ["component", "prop", "kind"]
+            required: ["component", "prop", "kind", "evidence"]
           }
         }
       },
@@ -69,7 +73,7 @@ export async function inferBoundaryManifestPatchWithOllama(request, options = {}
       options: {
         temperature: options.temperature ?? 0,
         num_ctx: options.numCtx ?? Number(process.env.OLLAMA_NUM_CTX ?? 8192),
-        num_predict: options.numPredict ?? Number(process.env.OLLAMA_NUM_PREDICT ?? 512)
+        num_predict: options.numPredict ?? Number(process.env.OLLAMA_NUM_PREDICT ?? 1024)
       },
       messages: createBoundaryInferenceMessages(request)
     })
@@ -109,6 +113,7 @@ export function createBoundaryInferenceMessages(request) {
         "Do not infer boundaries from prop names, targetCandidateIds, or closure source without that complete path.",
         "Do not use kind=component; use event, server, resource, or unknown.",
         "Add one manifestPatch component entry for each targetCandidateId whose target prop reaches an event boundary.",
+        "Each manifestPatch entry evidence must be the compact path from Component.prop to hostTag.onEvent.",
         "If manifestPatch.components is non-empty, decision must be add_to_whitelist.",
         "Use unknown when the trace is missing, cyclic, or ambiguous.",
         "Keep reason under 12 words and trace entries as compact fact IDs.",
@@ -186,6 +191,8 @@ export function decisionToManifest(decision) {
     }
     manifest.components[entry.component] ??= { props: {} };
     manifest.components[entry.component].props[entry.prop] = entry.kind;
+    manifest.components[entry.component].evidence ??= {};
+    manifest.components[entry.component].evidence[entry.prop] = entry.evidence;
   }
 
   return manifest;
@@ -219,7 +226,17 @@ function normalizeManifestComponent(value) {
     throw new Error(`Unsupported boundary kind: ${kind}`);
   }
 
-  return { component, prop, kind };
+  const evidence = normalizeEvidencePath(value.evidence);
+
+  return { component, prop, kind, evidence };
+}
+
+function normalizeEvidencePath(value) {
+  const rawParts = Array.isArray(value) ? value : [];
+  return rawParts
+    .flatMap((part) => String(part).split("->"))
+    .map((part) => part.trim().replace(/^c:[^:]+:/, ""))
+    .filter((part) => /^[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*$/.test(part));
 }
 
 function parseJsonResponse(responseText) {

@@ -1,6 +1,7 @@
 import { DEFAULT_OLLAMA_MODEL, decisionToManifest, inferBoundaryManifestPatchWithOllama } from "../src/ollama-classifier.mjs";
 import {
   SCENARIOS,
+  boundaryLabels,
   boundariesFromManifest,
   createScenarioRequest,
   entriesEqual,
@@ -22,7 +23,7 @@ for (const scenario of scenarios) {
   const wallMs = performance.now() - started;
   const actual = boundariesFromManifest(decisionToManifest(result.decision));
   const expected = expectedModelBoundaryEntries(scenario);
-  const pass = entriesEqual(actual, expected);
+  const pass = entriesEqual(boundaryLabels(actual), expected);
 
   console.log(
     JSON.stringify({

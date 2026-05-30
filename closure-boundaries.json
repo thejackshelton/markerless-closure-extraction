@@ -1,35 +1,99 @@
 {
   "components": {
     "Button": {
+      "evidence": {
+        "onPress": [
+          "Button.onPress",
+          "button.onClick"
+        ]
+      },
       "props": {
         "onPress": "event"
       }
     },
     "ConfirmDialog": {
+      "evidence": {
+        "onCancel": [
+          "ConfirmDialog.onCancel",
+          "DialogActions.onSecondary",
+          "Button.onPress",
+          "button.onClick"
+        ],
+        "onConfirm": [
+          "ConfirmDialog.onConfirm",
+          "DialogActions.onPrimary",
+          "Button.onPress",
+          "button.onClick"
+        ]
+      },
       "props": {
         "onCancel": "event",
         "onConfirm": "event"
       }
     },
     "DialogActions": {
+      "evidence": {
+        "onPrimary": [
+          "DialogActions.onPrimary",
+          "Button.onPress",
+          "button.onClick"
+        ],
+        "onSecondary": [
+          "DialogActions.onSecondary",
+          "Button.onPress",
+          "button.onClick"
+        ]
+      },
       "props": {
         "onPrimary": "event",
         "onSecondary": "event"
       }
     },
     "FormPanel": {
+      "evidence": {
+        "onReset": [
+          "FormPanel.onReset",
+          "Button.onPress",
+          "button.onClick"
+        ],
+        "onSubmit": [
+          "FormPanel.onSubmit",
+          "form.onSubmit"
+        ]
+      },
       "props": {
         "onReset": "event",
         "onSubmit": "event"
       }
     },
     "Toolbar": {
+      "evidence": {
+        "onPublish": [
+          "Toolbar.onPublish",
+          "ToolbarButton.onActivate",
+          "Button.onPress",
+          "button.onClick"
+        ],
+        "onSave": [
+          "Toolbar.onSave",
+          "ToolbarButton.onActivate",
+          "Button.onPress",
+          "button.onClick"
+        ]
+      },
       "props": {
         "onPublish": "event",
         "onSave": "event"
       }
     },
     "ToolbarButton": {
+      "evidence": {
+        "onActivate": [
+          "ToolbarButton.onActivate",
+          "Button.onPress",
+          "button.onClick"
+        ]
+      },
       "props": {
         "onActivate": "event"
       }

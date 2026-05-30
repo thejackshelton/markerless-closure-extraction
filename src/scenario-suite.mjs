@@ -451,8 +451,8 @@ export default function App() {
   {
     id: "17-helper-registration-negative",
     title: "Helper registration stays unknown",
-    level: "negative",
-    description: "A callback is handed to an unknown helper instead of a JSX event prop.",
+    level: "ambiguous",
+    description: "A callback is handed to an unresolved helper registration path instead of a JSX event prop.",
     files: {
       "src/App.tsx": `
 type RegistrationPanelProps = {
@@ -479,7 +479,7 @@ export default function App() {
   {
     id: "18-conditional-forwarding-negative",
     title: "Conditional forwarding stays unknown",
-    level: "negative",
+    level: "ambiguous",
     description: "A conditional expression obscures the prop-to-host trace, so this POC should not infer it.",
     files: {
       "src/App.tsx": `
@@ -618,13 +618,16 @@ export function evaluateScenario(scenario, classifier = new HostEventClassifier(
   const request = createBoundaryInferenceRequest(project);
   const inference = inferBoundaryManifestForProject(project, classifier);
   const closures = discoverExtractableClosuresInProject(project, inference.manifest);
+  const actualBoundaries = boundariesFromManifest(inference.manifest);
 
   return {
     scenario,
     request,
     inference,
-    actualBoundaries: boundariesFromManifest(inference.manifest),
+    actualBoundaries,
     expectedBoundaries: normalizeBoundaryEntries(scenario.expectedBoundaries),
+    actualUnknowns: unknownCandidateEntries(request, actualBoundaries),
+    expectedUnknowns: expectedUnknownEntriesForScenario(scenario, request),
     actualExtractableClosures: normalizeClosureEntries(
       closures.map((closure) => ({
         file: closure.file,
@@ -641,10 +644,13 @@ export function scenarioResultSummary(result) {
     id: result.scenario.id,
     title: result.scenario.title,
     level: result.scenario.level,
+    category: scenarioCategory(result.scenario),
     candidateCount: result.request.condensedAst.candidates.length,
     forwardingEdgeCount: result.request.condensedAst.propForwardingEdges.length,
     expectedBoundaryCount: result.expectedBoundaries.length,
     actualBoundaryCount: result.actualBoundaries.length,
+    expectedUnknownCount: result.expectedUnknowns.length,
+    actualUnknownCount: result.actualUnknowns.length,
     expectedExtractableClosureCount: result.expectedExtractableClosures.length,
     actualExtractableClosureCount: result.actualExtractableClosures.length
   };
@@ -652,6 +658,10 @@ export function scenarioResultSummary(result) {
 
 export function expectedBoundaryEntries(scenarios = SCENARIOS) {
   return scenarios.flatMap((scenario) => normalizeBoundaryEntries(scenario.expectedBoundaries));
+}
+
+export function expectedUnknownEntries(scenarios = SCENARIOS) {
+  return scenarios.flatMap((scenario) => expectedUnknownEntriesForScenario(scenario));
 }
 
 export function expectedModelBoundaryEntries(scenario) {
@@ -671,10 +681,15 @@ export function boundariesFromManifest(manifest) {
   const entries = [];
   for (const [component, record] of Object.entries(manifest.components ?? {})) {
     for (const [prop, kind] of Object.entries(record.props ?? {})) {
-      entries.push({ component, prop, kind });
+      entries.push({
+        component,
+        prop,
+        kind,
+        evidence: record.evidence?.[prop] ?? []
+      });
     }
   }
-  return normalizeBoundaryEntries(entries);
+  return normalizeBoundaryEntriesWithEvidence(entries);
 }
 
 export function normalizeBoundaryEntries(entries) {
@@ -685,6 +700,20 @@ export function normalizeBoundaryEntries(entries) {
       kind: entry.kind
     }))
     .sort(compareBoundaryEntries);
+}
+
+export function boundaryLabels(entries) {
+  return normalizeBoundaryEntries(entries);
+}
+
+export function normalizeUnknownEntries(entries) {
+  return entries
+    .map((entry) => ({
+      file: entry.file,
+      target: entry.target,
+      kind: "unknown"
+    }))
+    .sort(compareClosureEntries);
 }
 
 export function normalizeClosureEntries(entries) {
@@ -709,6 +738,51 @@ function expectedClosureEntries(scenario) {
       kind: "event"
     }))
   );
+}
+
+function expectedUnknownEntriesForScenario(scenario, request = createScenarioRequest(scenario)) {
+  const expectedClosureTargets = new Set(scenario.expectedClosures);
+  return normalizeUnknownEntries(
+    request.condensedAst.candidates
+      .filter((candidate) => !expectedClosureTargets.has(candidate.target))
+      .map((candidate) => ({
+        file: candidate.file,
+        target: candidate.target
+      }))
+  );
+}
+
+function unknownCandidateEntries(request, boundaries) {
+  const knownTargets = new Set(boundaryLabels(boundaries).map((entry) => `${entry.component}.${entry.prop}`));
+  return normalizeUnknownEntries(
+    request.condensedAst.candidates
+      .filter((candidate) => !knownTargets.has(candidate.target))
+      .map((candidate) => ({
+        file: candidate.file,
+        target: candidate.target
+      }))
+  );
+}
+
+function normalizeBoundaryEntriesWithEvidence(entries) {
+  return entries
+    .map((entry) => ({
+      component: entry.component,
+      prop: entry.prop,
+      kind: entry.kind,
+      evidence: Array.isArray(entry.evidence) ? entry.evidence.map(String) : []
+    }))
+    .sort(compareBoundaryEntries);
+}
+
+function scenarioCategory(scenario) {
+  if (scenario.id === "15-render-callback-negative" || scenario.id === "16-plain-function-prop-negative") {
+    return "negative";
+  }
+  if (scenario.id === "17-helper-registration-negative" || scenario.id === "18-conditional-forwarding-negative") {
+    return "ambiguous";
+  }
+  return "positive";
 }
 
 function compareBoundaryEntries(left, right) {

@@ -489,6 +489,7 @@ function inferBoundariesFromEdges(edges, classifier, classifierDecisions) {
     for (const edge of edges) {
       let kind = null;
       let reason = null;
+      let evidence = null;
 
       if (edge.targetKind === "host") {
         const candidate = {
@@ -504,12 +505,14 @@ function inferBoundariesFromEdges(edges, classifier, classifierDecisions) {
         if (decision.kind !== "unknown") {
           kind = decision.kind;
           reason = `classifier ${candidate.id}`;
+          evidence = [`${edge.component}.${edge.prop}`, `${edge.targetTag}.${edge.targetProp}`];
         }
       } else if (edge.targetKind === "component" && edge.targetComponent) {
         const propagated = boundaries.get(boundaryKey(edge.targetComponent, edge.targetProp));
         if (propagated) {
           kind = propagated.kind;
           reason = `${edge.targetComponent}.${edge.targetProp}`;
+          evidence = [`${edge.component}.${edge.prop}`, ...propagated.evidence];
         }
       }
 
@@ -523,7 +526,8 @@ function inferBoundariesFromEdges(edges, classifier, classifierDecisions) {
           component: edge.component,
           prop: edge.prop,
           kind,
-          reason
+          reason,
+          evidence
         });
         changed = true;
       }
@@ -572,6 +576,8 @@ function manifestFromBoundaries(boundaries) {
   for (const boundary of sorted) {
     manifest.components[boundary.component] ??= { props: {} };
     manifest.components[boundary.component].props[boundary.prop] = boundary.kind;
+    manifest.components[boundary.component].evidence ??= {};
+    manifest.components[boundary.component].evidence[boundary.prop] = boundary.evidence;
   }
 
   return manifest;

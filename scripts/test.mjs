@@ -10,8 +10,10 @@ import {
 } from "../src/ollama-classifier.mjs";
 import {
   SCENARIOS,
+  boundaryLabels,
   evaluateScenario,
   expectedBoundaryEntries,
+  expectedUnknownEntries,
   scenarioResultSummary
 } from "../src/scenario-suite.mjs";
 
@@ -84,11 +86,16 @@ async function testOllamaClientContract() {
     decision: "add_to_whitelist",
     confidence: "high",
     reason: "Button.onPress forwards to host button.onClick.",
-    trace: ["src/App.tsx Button.onPress", "src/Button.tsx props.onPress", "button.onClick"],
-    manifestPatch: {
-      components: [
-        { component: "Button", prop: "onPress", kind: "event" },
-        { component: "Toolbar", prop: "onSave", kind: "event" }
+      trace: ["src/App.tsx Button.onPress", "src/Button.tsx props.onPress", "button.onClick"],
+      manifestPatch: {
+        components: [
+        { component: "Button", prop: "onPress", kind: "event", evidence: ["Button.onPress", "button.onClick"] },
+        {
+          component: "Toolbar",
+          prop: "onSave",
+          kind: "event",
+          evidence: ["Toolbar.onSave", "ToolbarButton.onActivate", "button.onClick"]
+        }
       ]
     }
   };
@@ -122,6 +129,7 @@ async function testOllamaClientContract() {
   assert.equal(posted.body.model, "gemma4:e2b");
   assert.equal(posted.body.stream, false);
   assert.equal(posted.body.think, false);
+  assert.equal(posted.body.options.num_predict, 1024);
   assert.equal(posted.body.format.required.includes("manifestPatch"), true);
   assert.match(
     posted.body.messages[0].content,
@@ -135,11 +143,17 @@ async function testOllamaClientContract() {
       Button: {
         props: {
           onPress: "event"
+        },
+        evidence: {
+          onPress: ["Button.onPress", "button.onClick"]
         }
       },
       Toolbar: {
         props: {
           onSave: "event"
+        },
+        evidence: {
+          onSave: ["Toolbar.onSave", "ToolbarButton.onActivate", "button.onClick"]
         }
       }
     }
@@ -151,24 +165,40 @@ function testScenarioSuite() {
 
   const summaries = SCENARIOS.map((scenario) => {
     const result = evaluateScenario(scenario);
-    assert.deepEqual(result.actualBoundaries, result.expectedBoundaries, `${scenario.id} deterministic boundaries`);
+    assert.deepEqual(boundaryLabels(result.actualBoundaries), result.expectedBoundaries, `${scenario.id} deterministic boundaries`);
     assert.deepEqual(
       result.actualExtractableClosures,
       result.expectedExtractableClosures,
       `${scenario.id} extractable closures`
     );
+    assert.deepEqual(result.actualUnknowns, result.expectedUnknowns, `${scenario.id} unknown candidates`);
+    for (const boundary of result.actualBoundaries) {
+      assert(Array.isArray(boundary.evidence), `${scenario.id} ${boundary.component}.${boundary.prop} evidence array`);
+      assert(boundary.evidence.length >= 2, `${scenario.id} ${boundary.component}.${boundary.prop} evidence path`);
+      assert.equal(boundary.evidence[0], `${boundary.component}.${boundary.prop}`);
+      assert.match(boundary.evidence.at(-1), /^[a-z][A-Za-z0-9]*\.on[A-Z]/);
+    }
     return scenarioResultSummary(result);
   });
 
   const positiveCount = summaries.filter((summary) => summary.expectedBoundaryCount > 0).length;
-  const negativeCount = summaries.filter((summary) => summary.expectedBoundaryCount === 0).length;
+  const negativeCount = summaries.filter((summary) => summary.category === "negative").length;
+  const ambiguousCount = summaries.filter((summary) => summary.category === "ambiguous").length;
 
   assert.equal(positiveCount, 16);
-  assert.equal(negativeCount, 4);
+  assert.equal(negativeCount, 2);
+  assert.equal(ambiguousCount, 2);
   assert.equal(expectedBoundaryEntries(SCENARIOS).length, 27);
+  assert.equal(expectedUnknownEntries(SCENARIOS).length, 5);
   assert.equal(
     summaries.reduce((sum, summary) => sum + summary.expectedExtractableClosureCount, 0),
     21
+  );
+
+  const twoHop = evaluateScenario(SCENARIOS.find((scenario) => scenario.id === "07-two-hop-forwarding"));
+  assert.deepEqual(
+    twoHop.actualBoundaries.find((boundary) => boundary.component === "ActionPanel").evidence,
+    ["ActionPanel.onAction", "ActionButton.onTrigger", "button.onClick"]
   );
 }
 
@@ -198,6 +228,26 @@ function testModelJsonParsing() {
 }
 
 function testDecisionValidation() {
+  assert.deepEqual(
+    normalizeBoundaryDecision({
+      decision: "add_to_whitelist",
+      confidence: "high",
+      reason: "test",
+      trace: [],
+      manifestPatch: {
+        components: [
+          {
+            component: "Toolbar",
+            prop: "onSave",
+            kind: "event",
+            evidence:
+              ["c:src/Toolbar.tsx:Toolbar.onSave->c:src/ToolbarButton.tsx:ToolbarButton.onActivate->button.onClick"]
+          }
+        ]
+      }
+    }).manifestPatch.components[0].evidence,
+    ["Toolbar.onSave", "ToolbarButton.onActivate", "button.onClick"]
+  );
   assert.throws(() => normalizeBoundaryDecision({ decision: "maybe" }), /Unsupported decision/);
   assert.throws(
     () =>

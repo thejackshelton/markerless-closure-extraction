@@ -40,6 +40,10 @@ for (const [component, prop] of expectedBoundaries) {
   if (kind !== "event") {
     throw new Error(`expected Gemma to infer ${component}.${prop} = event, got ${kind ?? "missing"}`);
   }
+  const evidence = manifest.components?.[component]?.evidence?.[prop];
+  if (!Array.isArray(evidence) || evidence.length < 2) {
+    throw new Error(`expected Gemma to return evidence for ${component}.${prop}`);
+  }
 }
 
 console.log("ollama smoke: pass");
