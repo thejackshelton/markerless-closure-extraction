@@ -8,8 +8,15 @@ import {
   normalizeBoundaryDecision,
   parseJsonObjectFromModelContent
 } from "../src/ollama-classifier.mjs";
+import {
+  SCENARIOS,
+  evaluateScenario,
+  expectedBoundaryEntries,
+  scenarioResultSummary
+} from "../src/scenario-suite.mjs";
 
 await testCondensedAstRequest();
+testScenarioSuite();
 await testOllamaClientContract();
 testModelJsonParsing();
 testDecisionValidation();
@@ -116,6 +123,10 @@ async function testOllamaClientContract() {
   assert.equal(posted.body.stream, false);
   assert.equal(posted.body.think, false);
   assert.equal(posted.body.format.required.includes("manifestPatch"), true);
+  assert.match(
+    posted.body.messages[0].content,
+    /Only add manifestPatch entries when propForwardingEdges contain a complete path/
+  );
   assert.equal(result.decision.decision, "add_to_whitelist");
   assert.equal(result.performance.promptTokensPerSecond, 60);
   assert.equal(result.performance.outputTokensPerSecond, 30);
@@ -133,6 +144,32 @@ async function testOllamaClientContract() {
       }
     }
   });
+}
+
+function testScenarioSuite() {
+  assert.equal(SCENARIOS.length, 20);
+
+  const summaries = SCENARIOS.map((scenario) => {
+    const result = evaluateScenario(scenario);
+    assert.deepEqual(result.actualBoundaries, result.expectedBoundaries, `${scenario.id} deterministic boundaries`);
+    assert.deepEqual(
+      result.actualExtractableClosures,
+      result.expectedExtractableClosures,
+      `${scenario.id} extractable closures`
+    );
+    return scenarioResultSummary(result);
+  });
+
+  const positiveCount = summaries.filter((summary) => summary.expectedBoundaryCount > 0).length;
+  const negativeCount = summaries.filter((summary) => summary.expectedBoundaryCount === 0).length;
+
+  assert.equal(positiveCount, 16);
+  assert.equal(negativeCount, 4);
+  assert.equal(expectedBoundaryEntries(SCENARIOS).length, 27);
+  assert.equal(
+    summaries.reduce((sum, summary) => sum + summary.expectedExtractableClosureCount, 0),
+    21
+  );
 }
 
 function assertClosureSite(request, targetComponent, prop, sourceSnippet) {

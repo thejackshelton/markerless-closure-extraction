@@ -76,6 +76,15 @@ pnpm test
 
 The deterministic tests validate the condensed AST request shape and the Ollama client contract without requiring a live model.
 
+The scenario suite adds 20 parser-backed examples across direct events, cross-file forwarding, multi-hop propagation, negative render/helper cases, import aliases, and mixed positive/negative props:
+
+```sh
+pnpm scenarios
+OLLAMA_MODEL=qwen3-coder:30b pnpm ollama:scenarios
+```
+
+`pnpm scenarios` is deterministic and does not require a live model. It checks the full propagated manifest expected from the parser-first pipeline. `pnpm ollama:scenarios` sends each scenario's condensed AST packet to a local Ollama model and compares the returned manifest patch with the expected target candidate boundaries for the live model contract.
+
 Expected manifest:
 
 ```json

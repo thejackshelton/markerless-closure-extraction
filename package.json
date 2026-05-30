@@ -7,6 +7,8 @@
     "poc": "node scripts/poc.mjs",
     "test": "node scripts/test.mjs",
     "ollama:smoke": "node scripts/ollama-smoke.mjs",
+    "scenarios": "node scripts/scenarios.mjs",
+    "ollama:scenarios": "node scripts/ollama-scenarios.mjs",
     "bench:ollama": "node scripts/bench-ollama.mjs"
   },
   "dependencies": {

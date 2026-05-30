@@ -105,6 +105,8 @@ export function createBoundaryInferenceMessages(request) {
         "Infer which target closure props should be added to the extraction whitelist.",
         "A lowercase JSX tag is a host element. A host prop named on* is an event boundary.",
         "A component prop is an event boundary if propForwardingEdges recursively reaches a host on* prop.",
+        "Only add manifestPatch entries when propForwardingEdges contain a complete path from the target closure prop to a host on* prop.",
+        "Do not infer boundaries from prop names, targetCandidateIds, or closure source without that complete path.",
         "Do not use kind=component; use event, server, resource, or unknown.",
         "Add one manifestPatch component entry for each targetCandidateId whose target prop reaches an event boundary.",
         "If manifestPatch.components is non-empty, decision must be add_to_whitelist.",
