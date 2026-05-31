@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import { extname, join, resolve } from "pathe";
-import { createBoundaryInferenceRequest, parseProjectFiles } from "../src/pipeline.mjs";
+import {
+  createBoundaryInferenceRequest,
+  discoverExtractableClosuresInProject,
+  inferBoundaryManifestForProject,
+  parseProjectFiles
+} from "../src/pipeline.mjs";
 import {
   decisionToManifest,
   inferBoundaryManifestPatchWithOllama,
@@ -26,6 +31,7 @@ if (extraArgs.length > 0) {
 }
 
 await testCondensedAstRequest();
+testClosureExtractionInventory();
 testScenarioSuite();
 await testOllamaClientContract();
 testModelJsonParsing();
@@ -46,6 +52,18 @@ async function testCondensedAstRequest() {
   assertClosureSite(request, "FormPanel", "onSubmit", "event.preventDefault()");
   assertClosureSite(request, "FormPanel", "onReset", 'setFormDraft("reset")');
   assert.equal(request.condensedAst.candidates.length, 7);
+  assert.deepEqual(
+    request.allowedManifestTargets.map((target) => `${target.component}.${target.prop}`),
+    [
+      "Button.onPress",
+      "Toolbar.onSave",
+      "Toolbar.onPublish",
+      "ConfirmDialog.onConfirm",
+      "ConfirmDialog.onCancel",
+      "FormPanel.onSubmit",
+      "FormPanel.onReset"
+    ]
+  );
 
   assertForwardingEdge(request, {
     sourceFile: "src/Button.tsx",
@@ -86,6 +104,173 @@ async function testCondensedAstRequest() {
 
   const requestBytes = Buffer.byteLength(JSON.stringify(request), "utf8");
   assert(requestBytes < 60_000, `condensed AST request should stay compact, got ${requestBytes} bytes`);
+}
+
+function testClosureExtractionInventory() {
+  const rootDir = resolve("demo/closure-inventory");
+  const source = `
+import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { useEventListener } from "./useEventListener";
+import { debounce } from "./debounce";
+import { useMutation } from "@tanstack/react-query";
+
+type PanelProps = {
+  onSelect: () => void;
+  renderItem: () => string;
+};
+
+function Panel({ onSelect, renderItem }: PanelProps) {
+  return <button onClick={onSelect}>{renderItem()}</button>;
+}
+
+export default function App({ save, subscribe, getSnapshot, nodeRef, setCount }) {
+  const count = 1;
+  const handler = useCallback(() => save(count), [save, count]);
+
+  useEffect(() => {
+    const onKey = (event) => save(event.key, count);
+    window.addEventListener("keydown", onKey);
+
+    return () => window.removeEventListener("keydown", onKey);
+  }, [save, count]);
+
+  useEventListener("pointerdown", (event) => save(event.pointerId));
+  const debounced = debounce(() => save(count), 100);
+  useSyncExternalStore((notify) => subscribe(notify), () => getSnapshot(count));
+
+  useMutation({
+    mutationFn: async (value) => save(value),
+    onSuccess: () => setCount(count + 1)
+  });
+
+  return (
+    <Panel
+      ref={(node) => {
+        nodeRef.current = node;
+      }}
+      renderItem={() => count.toString()}
+      onSelect={() => handler()}
+      onHover={debounce(() => save(count), 50)}
+    />
+  );
+}
+`;
+  const project = parseProjectFiles([{ filename: join(rootDir, "src/App.tsx"), source }], rootDir);
+  const request = createBoundaryInferenceRequest(project);
+  const summaries = request.condensedAst.extractedClosures.map(closureInventorySummary);
+  assert(
+    request.condensedAst.extractedClosures.every((closure) => {
+      return closure.symbol.startsWith("closure_") && !closure.symbol.includes(":");
+    }),
+    "expected extracted closures to have stable hash symbols instead of path/span symbols"
+  );
+
+  assert.deepEqual(summaries, [
+    {
+      component: "App",
+      context: "call-argument:useCallback:0",
+      captures: ["count", "save"],
+      async: false
+    },
+    {
+      component: "App",
+      context: "call-argument:useEffect:0",
+      captures: ["count", "save"],
+      async: false
+    },
+    {
+      component: "App",
+      context: "variable-init:onKey",
+      captures: ["count", "save"],
+      async: false
+    },
+    {
+      component: "App",
+      context: "return-value",
+      captures: ["onKey"],
+      async: false
+    },
+    {
+      component: "App",
+      context: "call-argument:useEventListener:1",
+      captures: ["save"],
+      async: false
+    },
+    {
+      component: "App",
+      context: "call-argument:debounce:0",
+      captures: ["count", "save"],
+      async: false
+    },
+    {
+      component: "App",
+      context: "call-argument:useSyncExternalStore:0",
+      captures: ["subscribe"],
+      async: false
+    },
+    {
+      component: "App",
+      context: "call-argument:useSyncExternalStore:1",
+      captures: ["count", "getSnapshot"],
+      async: false
+    },
+    {
+      component: "App",
+      context: "object-property:mutationFn",
+      captures: ["save"],
+      async: true
+    },
+    {
+      component: "App",
+      context: "object-property:onSuccess",
+      captures: ["count", "setCount"],
+      async: false
+    },
+    {
+      component: "App",
+      context: "jsx-attribute:Panel.ref",
+      captures: ["nodeRef"],
+      async: false
+    },
+    {
+      component: "App",
+      context: "jsx-attribute:Panel.renderItem",
+      captures: ["count"],
+      async: false
+    },
+    {
+      component: "App",
+      context: "jsx-attribute:Panel.onSelect",
+      captures: ["handler"],
+      async: false
+    },
+    {
+      component: "App",
+      context: "call-argument:debounce:0",
+      captures: ["count", "save"],
+      async: false
+    }
+  ]);
+
+  assert.deepEqual(
+    request.condensedAst.candidates.map((candidate) => candidate.target),
+    ["Panel.ref", "Panel.renderItem", "Panel.onSelect"]
+  );
+
+  const inference = inferBoundaryManifestForProject(project, {
+    classifyBoundary(candidate) {
+      return {
+        kind: isHostEventProp(candidate.attribute) ? "event" : "unknown",
+        confidence: isHostEventProp(candidate.attribute) ? "high" : "none"
+      };
+    }
+  });
+  const whitelistedClosures = discoverExtractableClosuresInProject(project, inference.manifest).map((closure) => ({
+    file: closure.file,
+    target: closure.target,
+    kind: closure.boundaryKind
+  }));
+  assert.deepEqual(whitelistedClosures, [{ file: "src/App.tsx", target: "Panel.onSelect", kind: "event" }]);
 }
 
 async function testOllamaClientContract() {
@@ -165,9 +350,20 @@ async function testOllamaClientContract() {
   assert.equal(posted.body.think, false);
   assert.equal(posted.body.options.num_predict, 1024);
   assert.equal(posted.body.format.required.includes("manifestPatch"), true);
+  assert.equal(posted.body.format.required.includes("trace"), false);
+  assert.equal(Object.hasOwn(posted.body.format.properties, "trace"), false);
   assert.equal(posted.body.format.properties.manifestPatch.properties.components.items.required.includes("evidence"), false);
+  assert.equal(
+    posted.body.format.properties.manifestPatch.properties.components.items.properties.kind.enum.includes("unknown"),
+    false
+  );
   assert(posted.body.messages[0].content.includes("Only add manifestPatch entries when propForwardingEdges contain a complete path"));
+  assert(posted.body.messages[0].content.includes("allowedManifestTargets is the closed list"));
+  assert(posted.body.messages[0].content.includes("Only output exact component/prop pairs from condensedAst.candidates"));
+  assert(posted.body.messages[0].content.includes("Never output candidate.ownerComponent"));
+  assert(posted.body.messages[0].content.includes("manifestPatch.components is add-only"));
   assert(posted.body.messages[0].content.includes("Return only component, prop, and kind"));
+  assert(posted.body.messages[0].content.includes("Do not return trace or evidence"));
   assert.equal(result.decision.decision, "add_to_whitelist");
   assert.equal(result.performance.promptTokensPerSecond, 60);
   assert.equal(result.performance.outputTokensPerSecond, 30);
@@ -252,6 +448,31 @@ function assertForwardingEdge(request, expected) {
   assert(forwardingEdge, `expected condensed forwarding edge ${JSON.stringify(expected)}`);
 }
 
+function closureInventorySummary(closure) {
+  return {
+    component: closure.component,
+    context: closureContextLabel(closure.context),
+    captures: closure.captures,
+    async: closure.async
+  };
+}
+
+function closureContextLabel(context) {
+  if (context.kind === "call-argument") {
+    return `${context.kind}:${context.callee}:${context.argumentIndex}`;
+  }
+  if (context.kind === "variable-init") {
+    return `${context.kind}:${context.bindingName}`;
+  }
+  if (context.kind === "object-property") {
+    return `${context.kind}:${context.property}`;
+  }
+  if (context.kind === "jsx-attribute") {
+    return `${context.kind}:${context.tag}.${context.prop}`;
+  }
+  return context.kind;
+}
+
 function testModelJsonParsing() {
   assert.deepEqual(parseJsonObjectFromModelContent('```json\n{"decision":"unknown"}\n```'), {
     decision: "unknown"
@@ -318,6 +539,56 @@ function testDecisionValidation() {
           },
           evidence: {
             onPress: ["Button.onPress", "button.onClick"]
+          }
+        }
+      }
+    }
+  );
+  assert.deepEqual(
+    decisionToManifest(
+      normalizeBoundaryDecision({
+        decision: "add_to_whitelist",
+        confidence: "high",
+        reason: "test",
+        trace: [],
+        manifestPatch: {
+          components: [
+            { component: "Button", prop: "onPress", kind: "event" },
+            { component: "Toolbar", prop: "onSave", kind: "event" }
+          ]
+        }
+      }),
+      {
+        targetCandidateIds: ["closure:toolbar"],
+        condensedAst: {
+          candidates: [{ id: "closure:toolbar", target: "Toolbar.onSave" }],
+          propForwardingEdges: [
+            {
+              component: "Button",
+              prop: "onPress",
+              targetKind: "host",
+              targetTag: "button",
+              targetProp: "onClick"
+            },
+            {
+              component: "Toolbar",
+              prop: "onSave",
+              targetKind: "component",
+              targetComponent: "Button",
+              targetProp: "onPress"
+            }
+          ]
+        }
+      }
+    ),
+    {
+      components: {
+        Toolbar: {
+          props: {
+            onSave: "event"
+          },
+          evidence: {
+            onSave: ["Toolbar.onSave", "Button.onPress", "button.onClick"]
           }
         }
       }

@@ -15,7 +15,33 @@ const NODE_METADATA_KEYS = new Set([
   "computed"
 ]);
 
+const AST_METADATA_KEYS = new Set(["type", "start", "end", "loc", "range", "comments", "raw"]);
 const SOURCE_EXTENSIONS = [".tsx", ".jsx", ".ts", ".js"];
+const GLOBAL_IDENTIFIERS = new Set([
+  "AbortController",
+  "Array",
+  "Boolean",
+  "Date",
+  "Error",
+  "IntersectionObserver",
+  "JSON",
+  "Map",
+  "Math",
+  "Number",
+  "Object",
+  "Promise",
+  "ResizeObserver",
+  "Set",
+  "String",
+  "clearInterval",
+  "clearTimeout",
+  "console",
+  "document",
+  "requestAnimationFrame",
+  "setInterval",
+  "setTimeout",
+  "window"
+]);
 
 export class DeterministicMockClassifier {
   constructor(fixtureDocument) {
@@ -86,6 +112,13 @@ export function inferBoundaryManifestForProject(project, classifier = new Determ
 export function createBoundaryInferenceRequest(project, options = {}) {
   const condensedAst = createCondensedAstForProject(project);
   const targetCandidateIds = options.candidateIds ?? condensedAst.candidates.map((candidate) => candidate.id);
+  const allowedManifestTargets = condensedAst.candidates
+    .filter((candidate) => targetCandidateIds.includes(candidate.id))
+    .map((candidate) => ({
+      id: candidate.id,
+      component: candidate.targetComponent,
+      prop: candidate.targetProp
+    }));
 
   return {
     schemaVersion: 1,
@@ -95,11 +128,16 @@ export function createBoundaryInferenceRequest(project, options = {}) {
       "Use the condensed AST facts to recursively trace closure candidates across files.",
       "Lowercase JSX tags are host elements. Host on* attributes are event boundaries.",
       "For each targetCandidateId, add the candidate target component prop when its trace reaches a host on* boundary.",
+      "Only output exact component/prop pairs from condensedAst.candidates whose id is in targetCandidateIds.",
+      "Do not output the component that owns the closure unless that is also the candidate target.",
+      "Do not output intermediate forwarded components unless they are target candidates.",
       "Return only a manifest patch for boundaries supported by the trace.",
       "Use unknown when the trace is missing, cyclic, or ambiguous.",
+      "manifestPatch.components is add-only; leave it empty for unknown targets.",
       "If manifestPatch.components is non-empty, decision must be add_to_whitelist."
     ],
     targetCandidateIds,
+    allowedManifestTargets,
     condensedAst
   };
 }
@@ -108,21 +146,29 @@ export function createCondensedAstForProject(project) {
   const graph = buildProjectGraph(project);
   const propForwardingEdges = collectBoundaryEdges(graph);
   const closureSites = collectClosureSites(graph);
+  const extractedClosures = collectExtractedClosures(graph);
 
   return {
     schemaVersion: 1,
     files: project.map((file) => condenseFile(graph, file)),
     propForwardingEdges,
     closureSites,
+    extractedClosures,
     candidates: closureSites.map((site) => ({
       id: site.id,
       file: site.file,
-      component: site.component,
+      ownerComponent: site.component,
       target: `${site.targetComponent ?? site.targetTag}.${site.prop}`,
+      targetComponent: site.targetComponent ?? site.targetTag,
+      targetProp: site.prop,
       valueKind: site.valueKind,
       question: `Should closure ${site.id} add ${site.targetComponent ?? site.targetTag}.${site.prop} to the boundary manifest?`
     }))
   };
+}
+
+export function discoverExtractedClosuresInProject(project) {
+  return collectExtractedClosures(buildProjectGraph(project));
 }
 
 export function discoverExtractableClosuresInProject(project, manifest) {
@@ -303,6 +349,223 @@ function collectClosureSites(graph) {
   return closureSites.sort((left, right) => {
     const byFile = left.file.localeCompare(right.file);
     return byFile || left.span.start - right.span.start;
+  });
+}
+
+function collectExtractedClosures(graph) {
+  const closures = [];
+
+  for (const component of graph.components.values()) {
+    walkAst(component.node.body, (node, ancestors) => {
+      if (!isClosureExpression(node)) {
+        return;
+      }
+
+      const context = describeClosureContext(graph, component, node, ancestors);
+      const source = component.file.source.slice(node.start, node.end);
+      closures.push({
+        id: `closure:${component.file.filename}:${node.start}:${node.end}`,
+        symbol: stableClosureSymbol(component, context, source),
+        file: component.file.filename,
+        component: component.name,
+        valueKind: node.type,
+        async: Boolean(node.async),
+        context,
+        captures: captureListForClosure(node),
+        loc: component.file.parseResult.locOf(node.start),
+        span: { start: node.start, end: node.end },
+        source
+      });
+    });
+  }
+
+  return closures.sort((left, right) => {
+    const byFile = left.file.localeCompare(right.file);
+    return byFile || left.span.start - right.span.start;
+  });
+}
+
+function describeClosureContext(graph, component, node, ancestors) {
+  const directParent = ancestors.at(-1);
+  const jsxAttribute = ancestors.findLast((ancestor) => ancestor.type === "JSXAttribute");
+  const jsxElement = ancestors.findLast((ancestor) => ancestor.type === "JSXElement");
+  if (jsxAttribute && jsxElement && jsxAttributeExpression(jsxAttribute) === node) {
+    const tag = jsxNameToString(jsxElement.openingElement.name);
+    const target = resolveJsxTarget(graph, component.file, tag);
+    return {
+      kind: "jsx-attribute",
+      tag,
+      prop: jsxNameToString(jsxAttribute.name),
+      targetKind: target.kind,
+      targetComponent: target.componentName ?? null,
+      targetFile: target.file?.filename ?? null
+    };
+  }
+
+  if (directParent?.type === "VariableDeclarator" && directParent.init === node) {
+    return {
+      kind: "variable-init",
+      bindingName: bindingIdentifierName(directParent.id)
+    };
+  }
+
+  if (directParent?.type === "Property" && directParent.value === node) {
+    return {
+      kind: "object-property",
+      property: propertyName(directParent.key)
+    };
+  }
+
+  if (directParent?.type === "ReturnStatement" && directParent.argument === node) {
+    return { kind: "return-value" };
+  }
+
+  const callExpression = ancestors.findLast((ancestor) => {
+    return ancestor.type === "CallExpression" && (ancestor.arguments ?? []).includes(node);
+  });
+  if (callExpression) {
+    return {
+      kind: "call-argument",
+      callee: expressionName(callExpression.callee),
+      argumentIndex: callExpression.arguments.indexOf(node)
+    };
+  }
+
+  return { kind: "unknown" };
+}
+
+function stableClosureSymbol(component, context, source) {
+  return `closure_${stableHash(
+    JSON.stringify({
+      file: component.file.filename,
+      component: component.name,
+      context: sortJson(context),
+      source
+    })
+  )}`;
+}
+
+function stableHash(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function captureListForClosure(closure) {
+  const localBindings = new Set();
+  collectPatternBindings(closure.id, localBindings);
+  for (const param of closure.params ?? []) {
+    collectPatternBindings(param, localBindings);
+  }
+
+  walkAst(closure.body, (node, ancestors) => {
+    collectDeclaredBindings(node, localBindings);
+  });
+
+  const references = new Set();
+  walkAst(closure.body, (node, ancestors) => {
+    if (node.type !== "Identifier" || !isIdentifierReference(node, ancestors)) {
+      return;
+    }
+    if (!localBindings.has(node.name) && !GLOBAL_IDENTIFIERS.has(node.name)) {
+      references.add(node.name);
+    }
+  });
+
+  return [...references].sort();
+}
+
+function collectDeclaredBindings(node, bindings) {
+  if (node.type === "VariableDeclarator") {
+    collectPatternBindings(node.id, bindings);
+  } else if (node.type === "FunctionDeclaration") {
+    collectPatternBindings(node.id, bindings);
+    for (const param of node.params ?? []) {
+      collectPatternBindings(param, bindings);
+    }
+  } else if (isClosureExpression(node)) {
+    collectPatternBindings(node.id, bindings);
+    for (const param of node.params ?? []) {
+      collectPatternBindings(param, bindings);
+    }
+  }
+}
+
+function collectPatternBindings(node, bindings) {
+  if (!node) {
+    return;
+  }
+
+  if (node.type === "Identifier") {
+    bindings.add(node.name);
+    return;
+  }
+
+  if (node.type === "AssignmentPattern") {
+    collectPatternBindings(node.left, bindings);
+    return;
+  }
+
+  if (node.type === "RestElement") {
+    collectPatternBindings(node.argument, bindings);
+    return;
+  }
+
+  if (node.type === "ObjectPattern") {
+    for (const property of node.properties ?? []) {
+      if (property.type === "Property") {
+        collectPatternBindings(property.value, bindings);
+      } else if (property.type === "RestElement") {
+        collectPatternBindings(property.argument, bindings);
+      }
+    }
+    return;
+  }
+
+  if (node.type === "ArrayPattern") {
+    for (const element of node.elements ?? []) {
+      collectPatternBindings(element, bindings);
+    }
+  }
+}
+
+function isIdentifierReference(node, ancestors) {
+  const parent = ancestors.at(-1);
+  if (!parent) {
+    return true;
+  }
+
+  if (parent.type === "VariableDeclarator" && parent.id === node) {
+    return false;
+  }
+  if (parent.type === "FunctionDeclaration" && parent.id === node) {
+    return false;
+  }
+  if ((parent.type === "FunctionExpression" || parent.type === "ArrowFunctionExpression") && parent.id === node) {
+    return false;
+  }
+  if ((parent.type === "FunctionExpression" || parent.type === "ArrowFunctionExpression") && (parent.params ?? []).includes(node)) {
+    return false;
+  }
+  if (parent.type === "Property" && parent.key === node && !parent.computed) {
+    return false;
+  }
+  if (parent.type === "MemberExpression" && parent.property === node && !parent.computed) {
+    return false;
+  }
+  if (parent.type === "ImportSpecifier" || parent.type === "ImportDefaultSpecifier" || parent.type === "ImportNamespaceSpecifier") {
+    return false;
+  }
+  if (parent.type?.startsWith("TS")) {
+    return false;
+  }
+
+  return !ancestors.some((ancestor, index) => {
+    const child = index === ancestors.length - 1 ? node : ancestors[index + 1];
+    return ancestor.type === "Property" && ancestor.key === child && !ancestor.computed;
   });
 }
 
@@ -716,6 +979,28 @@ function importedName(node) {
   return null;
 }
 
+function expressionName(node) {
+  if (!node) {
+    return null;
+  }
+
+  if (node.type === "Identifier") {
+    return node.name;
+  }
+
+  if (node.type === "MemberExpression") {
+    const object = expressionName(node.object);
+    const property = node.computed ? null : expressionName(node.property);
+    return object && property ? `${object}.${property}` : object ?? property;
+  }
+
+  if (node.type === "ChainExpression") {
+    return expressionName(node.expression);
+  }
+
+  return null;
+}
+
 function isClosureExpression(node) {
   return node?.type === "ArrowFunctionExpression" || node?.type === "FunctionExpression";
 }
@@ -772,6 +1057,31 @@ function walk(node, enter, parent = null) {
       continue;
     }
     walk(value, enter, node);
+  }
+}
+
+function walkAst(node, enter, ancestors = []) {
+  if (!node || typeof node !== "object") {
+    return;
+  }
+
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      walkAst(item, enter, ancestors);
+    }
+    return;
+  }
+
+  if (typeof node.type === "string") {
+    enter(node, ancestors);
+  }
+
+  const nextAncestors = typeof node.type === "string" ? ancestors.concat(node) : ancestors;
+  for (const [key, value] of Object.entries(node)) {
+    if (AST_METADATA_KEYS.has(key)) {
+      continue;
+    }
+    walkAst(value, enter, nextAncestors);
   }
 }
 

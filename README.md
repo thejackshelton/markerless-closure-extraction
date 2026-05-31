@@ -38,6 +38,12 @@ The important claim is not "AI compiles the app." The claim is: **AI-inferred me
 
 The model is a boundary discovery tool. The compiler remains responsible for deterministic extraction and build output. Ambiguous cases remain `unknown` unless there is a complete evidence path from a candidate component prop to a host `on*` event.
 
+The condensed AST now keeps these surfaces separate:
+
+- `extractedClosures`: every closure the compiler can deterministically lift from component bodies, including hook callbacks, effect setup/cleanup functions, object callback properties, callback refs, render props, and debounce/throttle arguments. Each entry includes source location, context, source text, and a capture list.
+- `candidates`: the narrower set of closure-backed component props that the local model may classify for whitelist metadata.
+- `allowedManifestTargets`: the closed list of component/prop entries the model is allowed to return. The compiler rejects model output outside this list and still derives evidence paths itself.
+
 ## Run
 
 ```sh
@@ -79,6 +85,8 @@ pnpm verify
 ```
 
 The deterministic tests validate the condensed AST request shape and the Ollama client contract without requiring a live model.
+
+The deterministic tests also include a closure inventory fixture covering `useEffect`, cleanup closures, custom event hooks, debounce wrappers, `useCallback`, `useSyncExternalStore`, TanStack-style object callbacks, callback refs, and render props. That fixture proves those closures are extracted even though only the event-backed JSX prop is whitelisted.
 
 The scenario suite adds 20 parser-backed examples across direct events, cross-file forwarding, multi-hop propagation, import aliases, negative render/computation cases, ambiguous helper/conditional cases, and mixed positive/unknown props:
 

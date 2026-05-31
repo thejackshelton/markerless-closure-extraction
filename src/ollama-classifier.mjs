@@ -15,10 +15,6 @@ export const BOUNDARY_MANIFEST_PATCH_SCHEMA = {
       enum: ["high", "medium", "low", "none"]
     },
     reason: { type: "string" },
-    trace: {
-      type: "array",
-      items: { type: "string" }
-    },
     manifestPatch: {
       type: "object",
       additionalProperties: false,
@@ -33,7 +29,7 @@ export const BOUNDARY_MANIFEST_PATCH_SCHEMA = {
               prop: { type: "string" },
               kind: {
                 type: "string",
-                enum: ["event", "server", "resource", "unknown"]
+                enum: ["event", "server", "resource"]
               }
             },
             required: ["component", "prop", "kind"]
@@ -43,7 +39,7 @@ export const BOUNDARY_MANIFEST_PATCH_SCHEMA = {
       required: ["components"]
     }
   },
-  required: ["decision", "confidence", "reason", "trace", "manifestPatch"]
+  required: ["decision", "confidence", "reason", "manifestPatch"]
 };
 
 const DECISIONS = new Set(["add_to_whitelist", "no_boundary", "unknown"]);
@@ -110,11 +106,20 @@ export function createBoundaryInferenceMessages(request) {
         "Only add manifestPatch entries when propForwardingEdges contain a complete path from the target closure prop to a host on* prop.",
         "Do not infer boundaries from prop names, targetCandidateIds, or closure source without that complete path.",
         "Do not use kind=component; use event, server, resource, or unknown.",
-        "Add one manifestPatch component entry for each targetCandidateId whose target prop reaches an event boundary.",
+        "Add one manifestPatch component entry for each targetCandidateId whose candidate target reaches an event boundary.",
+        "allowedManifestTargets is the closed list of manifestPatch entries you may return.",
+        "Copy component and prop exactly from allowedManifestTargets.",
+        "Only output exact component/prop pairs from condensedAst.candidates whose id is in targetCandidateIds.",
+        "Use candidate.targetComponent and candidate.targetProp for manifestPatch entries.",
+        "Never output candidate.ownerComponent just because the closure is written there.",
+        "Never output intermediate forwarded components unless they are also target candidates.",
+        "manifestPatch.components is add-only; never put kind=unknown inside it.",
+        "If no allowed target is proven, return an empty manifestPatch.components array.",
         "Return only component, prop, and kind for each manifestPatch entry; the compiler derives evidence from propForwardingEdges.",
         "If manifestPatch.components is non-empty, decision must be add_to_whitelist.",
         "Use unknown when the trace is missing, cyclic, or ambiguous.",
-        "Keep reason under 12 words and trace entries as compact fact IDs.",
+        "Keep reason under 12 words.",
+        "Do not return trace or evidence.",
         "Return JSON matching the schema. Do not return markdown or prose outside JSON."
       ].join(" ")
     },
@@ -184,9 +189,13 @@ export function decisionToManifest(decision, request = null) {
   }
 
   const findEvidencePath = createEvidencePathFinder(request);
+  const allowedTargets = createAllowedManifestTargets(request);
 
   for (const entry of decision.manifestPatch.components) {
     if (entry.kind === "unknown") {
+      continue;
+    }
+    if (allowedTargets && !allowedTargets.has(componentPropReference(entry.component, entry.prop))) {
       continue;
     }
     const evidence = findEvidencePath?.(entry.component, entry.prop);
@@ -233,6 +242,30 @@ function normalizeManifestComponent(value) {
   }
 
   return { component, prop, kind };
+}
+
+function createAllowedManifestTargets(request) {
+  if (Array.isArray(request?.allowedManifestTargets) && request.allowedManifestTargets.length > 0) {
+    return new Set(
+      request.allowedManifestTargets
+        .map((target) => componentPropReference(String(target.component ?? ""), String(target.prop ?? "")))
+        .filter((target) => !target.startsWith(".") && !target.endsWith("."))
+    );
+  }
+
+  const targetCandidateIds = new Set(Array.isArray(request?.targetCandidateIds) ? request.targetCandidateIds : []);
+  const candidates = Array.isArray(request?.condensedAst?.candidates) ? request.condensedAst.candidates : [];
+  if (targetCandidateIds.size === 0 || candidates.length === 0) {
+    return null;
+  }
+
+  const targets = new Set();
+  for (const candidate of candidates) {
+    if (targetCandidateIds.has(candidate.id) && typeof candidate.target === "string") {
+      targets.add(candidate.target);
+    }
+  }
+  return targets;
 }
 
 function createEvidencePathFinder(request) {
