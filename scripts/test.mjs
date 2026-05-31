@@ -17,6 +17,14 @@ import {
   scenarioResultSummary
 } from "../src/scenario-suite.mjs";
 
+const extraArgs = process.argv.slice(2);
+if (extraArgs.length > 0) {
+  console.error(`Unexpected argument(s): ${extraArgs.join(" ")}`);
+  console.error("pnpm passes arguments after the script name into that script.");
+  console.error("Use `pnpm ollama:smoke`, `pnpm ollama:scenarios`, `pnpm test:gemma`, or `pnpm verify:gemma`.");
+  process.exit(1);
+}
+
 await testCondensedAstRequest();
 testScenarioSuite();
 await testOllamaClientContract();

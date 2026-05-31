@@ -54,10 +54,13 @@ The live local inference path uses Ollama with `gemma4:e2b` by default:
 ```sh
 ollama pull gemma4:e2b
 pnpm ollama:smoke
+pnpm test:gemma
 pnpm bench:ollama
 ```
 
 `pnpm ollama:smoke` sends a Yuku-derived condensed AST packet to Gemma 4 E2B, verifies that the model returns the seven boundary entries from `App.tsx`, and verifies that the compiler can derive evidence paths from `propForwardingEdges`.
+
+`pnpm test` is deterministic and does not run Gemma. Use `pnpm test:gemma` or `pnpm ollama:smoke` for the live local model check. Do not run `pnpm test ollama:smoke`; pnpm passes `ollama:smoke` as an argument to `scripts/test.mjs`.
 
 `pnpm bench:ollama` repeats the same request and prints wall time plus Ollama's prompt/output token rates. Override the model or run count with:
 
@@ -72,6 +75,7 @@ Gemma 4 needs `think: false` on the Ollama chat request for this JSON classifier
 
 ```sh
 pnpm test
+pnpm verify
 ```
 
 The deterministic tests validate the condensed AST request shape and the Ollama client contract without requiring a live model.
