@@ -8,6 +8,12 @@ importers:
 
   .:
     dependencies:
+      pathe:
+        specifier: ^2.0.3
+        version: 2.0.3
+      ufo:
+        specifier: ^1.6.4
+        version: 1.6.4
       yuku-parser:
         specifier: 0.5.20
         version: 0.5.20
@@ -75,6 +81,12 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  pathe@2.0.3:
+    resolution: {integrity: sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==}
+
+  ufo@1.6.4:
+    resolution: {integrity: sha512-JFNbkD1Svwe0KvGi8GOeLcP4kAWQ609twvCdcHxq1oSL8svv39ZuSvajcD8B+5D0eL4+s1Is2D/O6KN3qcTeRA==}
+
   yuku-parser@0.5.20:
     resolution: {integrity: sha512-tkzduErGtH7CVrm0VFwwu2YCYSrHzhK5+pIgI63twFqHDH5J9E78wqo7DLTTkmd904/FVJKw0m+HFxRbiSU8Hw==}
 
@@ -112,6 +124,10 @@ snapshots:
 
   '@yuku-parser/binding-win32-x64@0.5.20':
     optional: true
+
+  pathe@2.0.3: {}
+
+  ufo@1.6.4: {}
 
   yuku-parser@0.5.20:
     optionalDependencies:

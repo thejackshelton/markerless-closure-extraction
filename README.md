@@ -36,7 +36,7 @@ local model:
 
 The important claim is not "AI compiles the app." The claim is: **AI-inferred metadata, deterministic compilation**.
 
-The model is a boundary discovery tool. The compiler remains responsible for deterministic extraction and build output.
+The model is a boundary discovery tool. The compiler remains responsible for deterministic extraction and build output. Ambiguous cases remain `unknown` unless there is a complete evidence path from a candidate component prop to a host `on*` event.
 
 ## Run
 
@@ -54,10 +54,13 @@ The live local inference path uses Ollama with `gemma4:e2b` by default:
 ```sh
 ollama pull gemma4:e2b
 pnpm ollama:smoke
+pnpm test:gemma
 pnpm bench:ollama
 ```
 
-`pnpm ollama:smoke` sends a Yuku-derived condensed AST packet to Gemma 4 E2B and verifies that the model returns manifest patches for all seven closure target props in `App.tsx`.
+`pnpm ollama:smoke` sends a Yuku-derived condensed AST packet to Gemma 4 E2B, verifies that the model returns the seven boundary entries from `App.tsx`, and verifies that the compiler can derive evidence paths from `propForwardingEdges`.
+
+`pnpm test` is deterministic and does not run Gemma. Use `pnpm test:gemma` or `pnpm ollama:smoke` for the live local model check. Do not run `pnpm test ollama:smoke`; pnpm passes `ollama:smoke` as an argument to `scripts/test.mjs`.
 
 `pnpm bench:ollama` repeats the same request and prints wall time plus Ollama's prompt/output token rates. Override the model or run count with:
 
@@ -72,9 +75,19 @@ Gemma 4 needs `think: false` on the Ollama chat request for this JSON classifier
 
 ```sh
 pnpm test
+pnpm verify
 ```
 
 The deterministic tests validate the condensed AST request shape and the Ollama client contract without requiring a live model.
+
+The scenario suite adds 20 parser-backed examples across direct events, cross-file forwarding, multi-hop propagation, import aliases, negative render/computation cases, ambiguous helper/conditional cases, and mixed positive/unknown props:
+
+```sh
+pnpm scenarios
+OLLAMA_MODEL=qwen3-coder:30b pnpm ollama:scenarios
+```
+
+`pnpm scenarios` is deterministic and does not require a live model. It checks the full propagated manifest expected from the parser-first pipeline, validates compiler-derived evidence paths, and verifies that unknown candidates stay unknown. `pnpm ollama:scenarios` sends each scenario's condensed AST packet to a local Ollama model and compares the returned manifest patch with the expected target candidate boundaries for the live model contract.
 
 Expected manifest:
 
@@ -82,35 +95,99 @@ Expected manifest:
 {
   "components": {
     "Button": {
+      "evidence": {
+        "onPress": [
+          "Button.onPress",
+          "button.onClick"
+        ]
+      },
       "props": {
         "onPress": "event"
       }
     },
     "ConfirmDialog": {
+      "evidence": {
+        "onCancel": [
+          "ConfirmDialog.onCancel",
+          "DialogActions.onSecondary",
+          "Button.onPress",
+          "button.onClick"
+        ],
+        "onConfirm": [
+          "ConfirmDialog.onConfirm",
+          "DialogActions.onPrimary",
+          "Button.onPress",
+          "button.onClick"
+        ]
+      },
       "props": {
         "onCancel": "event",
         "onConfirm": "event"
       }
     },
     "DialogActions": {
+      "evidence": {
+        "onPrimary": [
+          "DialogActions.onPrimary",
+          "Button.onPress",
+          "button.onClick"
+        ],
+        "onSecondary": [
+          "DialogActions.onSecondary",
+          "Button.onPress",
+          "button.onClick"
+        ]
+      },
       "props": {
         "onPrimary": "event",
         "onSecondary": "event"
       }
     },
     "FormPanel": {
+      "evidence": {
+        "onReset": [
+          "FormPanel.onReset",
+          "Button.onPress",
+          "button.onClick"
+        ],
+        "onSubmit": [
+          "FormPanel.onSubmit",
+          "form.onSubmit"
+        ]
+      },
       "props": {
         "onReset": "event",
         "onSubmit": "event"
       }
     },
     "Toolbar": {
+      "evidence": {
+        "onPublish": [
+          "Toolbar.onPublish",
+          "ToolbarButton.onActivate",
+          "Button.onPress",
+          "button.onClick"
+        ],
+        "onSave": [
+          "Toolbar.onSave",
+          "ToolbarButton.onActivate",
+          "Button.onPress",
+          "button.onClick"
+        ]
+      },
       "props": {
         "onPublish": "event",
         "onSave": "event"
       }
     },
     "ToolbarButton": {
+      "evidence": {
+        "onActivate": [
+          "ToolbarButton.onActivate",
+          "Button.onPress",
+          "button.onClick"
+        ]
+      },
       "props": {
         "onActivate": "event"
       }
@@ -119,7 +196,7 @@ Expected manifest:
 }
 ```
 
-This manifest is the contract between inference and compilation. A watch-mode tool may update or propose changes to it, but a production build should treat it like normal source-controlled metadata.
+This manifest is the contract between inference and compilation. A watch-mode tool may update or propose changes to it, but a production build should treat it like normal source-controlled metadata. The local model proposes `component`, `prop`, and `kind`; the compiler derives the evidence path from `propForwardingEdges` and can reject a proposed event boundary when that path is missing.
 
 ## Scope
 

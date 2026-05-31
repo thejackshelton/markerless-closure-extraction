@@ -6,10 +6,18 @@
   "scripts": {
     "poc": "node scripts/poc.mjs",
     "test": "node scripts/test.mjs",
+    "test:gemma": "pnpm ollama:smoke",
+    "test:gemma:scenarios": "pnpm ollama:scenarios",
+    "verify": "pnpm test && pnpm scenarios && pnpm poc",
+    "verify:gemma": "pnpm verify && pnpm ollama:smoke",
     "ollama:smoke": "node scripts/ollama-smoke.mjs",
+    "scenarios": "node scripts/scenarios.mjs",
+    "ollama:scenarios": "node scripts/ollama-scenarios.mjs",
     "bench:ollama": "node scripts/bench-ollama.mjs"
   },
   "dependencies": {
+    "pathe": "^2.0.3",
+    "ufo": "^1.6.4",
     "yuku-parser": "0.5.20"
   }
 }

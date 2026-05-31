@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
-import { extname, join, resolve } from "node:path";
+import { extname, join, resolve } from "pathe";
 import { createBoundaryInferenceRequest, parseProjectFiles } from "../src/pipeline.mjs";
 import {
   decisionToManifest,
@@ -8,8 +8,25 @@ import {
   normalizeBoundaryDecision,
   parseJsonObjectFromModelContent
 } from "../src/ollama-classifier.mjs";
+import {
+  SCENARIOS,
+  boundaryLabels,
+  evaluateScenario,
+  expectedBoundaryEntries,
+  expectedUnknownEntries,
+  scenarioResultSummary
+} from "../src/scenario-suite.mjs";
+
+const extraArgs = process.argv.slice(2);
+if (extraArgs.length > 0) {
+  console.error(`Unexpected argument(s): ${extraArgs.join(" ")}`);
+  console.error("pnpm passes arguments after the script name into that script.");
+  console.error("Use `pnpm ollama:smoke`, `pnpm ollama:scenarios`, `pnpm test:gemma`, or `pnpm verify:gemma`.");
+  process.exit(1);
+}
 
 await testCondensedAstRequest();
+testScenarioSuite();
 await testOllamaClientContract();
 testModelJsonParsing();
 testDecisionValidation();
@@ -73,6 +90,37 @@ async function testCondensedAstRequest() {
 
 async function testOllamaClientContract() {
   let posted;
+  const mockRequest = {
+    task: "test",
+    condensedAst: {
+      files: [],
+      propForwardingEdges: [
+        {
+          component: "Button",
+          prop: "onPress",
+          targetKind: "host",
+          targetTag: "button",
+          targetProp: "onClick"
+        },
+        {
+          component: "ToolbarButton",
+          prop: "onActivate",
+          targetKind: "component",
+          targetTag: "Button",
+          targetComponent: "Button",
+          targetProp: "onPress"
+        },
+        {
+          component: "Toolbar",
+          prop: "onSave",
+          targetKind: "component",
+          targetTag: "ToolbarButton",
+          targetComponent: "ToolbarButton",
+          targetProp: "onActivate"
+        }
+      ]
+    }
+  };
   const mockDecision = {
     decision: "add_to_whitelist",
     confidence: "high",
@@ -87,7 +135,7 @@ async function testOllamaClientContract() {
   };
 
   const result = await inferBoundaryManifestPatchWithOllama(
-    { task: "test", condensedAst: { files: [] } },
+    mockRequest,
     {
       model: "gemma4:e2b",
       fetchImpl: async (url, init) => {
@@ -115,24 +163,77 @@ async function testOllamaClientContract() {
   assert.equal(posted.body.model, "gemma4:e2b");
   assert.equal(posted.body.stream, false);
   assert.equal(posted.body.think, false);
+  assert.equal(posted.body.options.num_predict, 1024);
   assert.equal(posted.body.format.required.includes("manifestPatch"), true);
+  assert.equal(posted.body.format.properties.manifestPatch.properties.components.items.required.includes("evidence"), false);
+  assert(posted.body.messages[0].content.includes("Only add manifestPatch entries when propForwardingEdges contain a complete path"));
+  assert(posted.body.messages[0].content.includes("Return only component, prop, and kind"));
   assert.equal(result.decision.decision, "add_to_whitelist");
   assert.equal(result.performance.promptTokensPerSecond, 60);
   assert.equal(result.performance.outputTokensPerSecond, 30);
-  assert.deepEqual(decisionToManifest(result.decision), {
+  assert.throws(() => decisionToManifest(result.decision), /requires the condensed AST request/);
+  assert.deepEqual(decisionToManifest(result.decision, mockRequest), {
     components: {
       Button: {
         props: {
           onPress: "event"
+        },
+        evidence: {
+          onPress: ["Button.onPress", "button.onClick"]
         }
       },
       Toolbar: {
         props: {
           onSave: "event"
+        },
+        evidence: {
+          onSave: ["Toolbar.onSave", "ToolbarButton.onActivate", "Button.onPress", "button.onClick"]
         }
       }
     }
   });
+}
+
+function testScenarioSuite() {
+  assert.equal(SCENARIOS.length, 20);
+
+  const summaries = SCENARIOS.map((scenario) => {
+    const result = evaluateScenario(scenario);
+    assert.deepEqual(boundaryLabels(result.actualBoundaries), result.expectedBoundaries, `${scenario.id} deterministic boundaries`);
+    assert.deepEqual(
+      result.actualExtractableClosures,
+      result.expectedExtractableClosures,
+      `${scenario.id} extractable closures`
+    );
+    assert.deepEqual(result.actualUnknowns, result.expectedUnknowns, `${scenario.id} unknown candidates`);
+    for (const boundary of result.actualBoundaries) {
+      assert(Array.isArray(boundary.evidence), `${scenario.id} ${boundary.component}.${boundary.prop} evidence array`);
+      assert(boundary.evidence.length >= 2, `${scenario.id} ${boundary.component}.${boundary.prop} evidence path`);
+      assert.equal(boundary.evidence[0], `${boundary.component}.${boundary.prop}`);
+      assertHostEventEvidence(boundary.evidence.at(-1));
+    }
+    return scenarioResultSummary(result);
+  });
+
+  const positiveCount = summaries.filter((summary) => summary.expectedBoundaryCount > 0).length;
+  const negativeCount = summaries.filter((summary) => summary.category === "negative").length;
+  const ambiguousCount = summaries.filter((summary) => summary.category === "ambiguous").length;
+
+  assert.equal(positiveCount, 16);
+  assert.equal(negativeCount, 2);
+  assert.equal(ambiguousCount, 2);
+  assert.equal(expectedBoundaryEntries(SCENARIOS).length, 27);
+  assert.equal(expectedUnknownEntries(SCENARIOS).length, 5);
+  assert.equal(
+    summaries.reduce((sum, summary) => sum + summary.expectedExtractableClosureCount, 0),
+    21
+  );
+
+  const twoHop = evaluateScenario(SCENARIOS.find((scenario) => scenario.id === "07-two-hop-forwarding"));
+  assert.deepEqual(
+    twoHop.actualBoundaries.find((boundary) => boundary.component === "ActionPanel").evidence,
+    ["ActionPanel.onAction", "ActionButton.onTrigger", "button.onClick"]
+  );
 }
 
 function assertClosureSite(request, targetComponent, prop, sourceSnippet) {
@@ -161,6 +262,67 @@ function testModelJsonParsing() {
 }
 
 function testDecisionValidation() {
+  assert.deepEqual(
+    normalizeBoundaryDecision({
+      decision: "add_to_whitelist",
+      confidence: "high",
+      reason: "test",
+      trace: [],
+      manifestPatch: {
+        components: [
+          {
+            component: "Toolbar",
+            prop: "onSave",
+            kind: "event",
+            evidence:
+              ["c:src/Toolbar.tsx:Toolbar.onSave->c:src/ToolbarButton.tsx:ToolbarButton.onActivate->button.onClick"]
+          }
+        ]
+      }
+    }).manifestPatch.components[0],
+    { component: "Toolbar", prop: "onSave", kind: "event" }
+  );
+  assert.deepEqual(
+    decisionToManifest(
+      normalizeBoundaryDecision({
+        decision: "add_to_whitelist",
+        confidence: "high",
+        reason: "test",
+        trace: [],
+        manifestPatch: {
+          components: [
+            { component: "Button", prop: "onPress", kind: "event" },
+            { component: "Missing", prop: "onGuess", kind: "event" }
+          ]
+        }
+      }),
+      {
+        condensedAst: {
+          propForwardingEdges: [
+            {
+              component: "Button",
+              prop: "onPress",
+              targetKind: "host",
+              targetTag: "button",
+              targetProp: "onClick"
+            }
+          ]
+        }
+      }
+    ),
+    {
+      components: {
+        Button: {
+          props: {
+            onPress: "event"
+          },
+          evidence: {
+            onPress: ["Button.onPress", "button.onClick"]
+          }
+        }
+      }
+    }
+  );
   assert.throws(() => normalizeBoundaryDecision({ decision: "maybe" }), /Unsupported decision/);
   assert.throws(
     () =>
@@ -175,6 +337,29 @@ function testDecisionValidation() {
       }),
     /Unsupported boundary kind/
   );
+}
+
+function assertHostEventEvidence(value) {
+  const separator = value.lastIndexOf(".");
+  assert(separator > 0, `expected terminal evidence to be tag.prop, got ${value}`);
+  assert(isHostJsxTag(value.slice(0, separator)), `expected host JSX tag evidence, got ${value}`);
+  assert(isHostEventProp(value.slice(separator + 1)), `expected host event prop evidence, got ${value}`);
+}
+
+function isHostJsxTag(tag) {
+  return typeof tag === "string" && tag.length > 0 && isAsciiLowercaseCode(tag.charCodeAt(0));
+}
+
+function isHostEventProp(prop) {
+  return typeof prop === "string" && prop.length > 2 && prop.startsWith("on") && isAsciiUppercaseCode(prop.charCodeAt(2));
+}
+
+function isAsciiLowercaseCode(code) {
+  return code >= 97 && code <= 122;
+}
+
+function isAsciiUppercaseCode(code) {
+  return code >= 65 && code <= 90;
 }
 
 async function readSourceFiles(directory) {

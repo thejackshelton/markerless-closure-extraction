@@ -1,5 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
-import { extname, join, resolve } from "node:path";
+import { extname, join, resolve } from "pathe";
 import { createBoundaryInferenceRequest, parseProjectFiles } from "../src/pipeline.mjs";
 import {
   DEFAULT_OLLAMA_MODEL,
@@ -18,7 +18,7 @@ console.log(`condensed AST request: ${requestBytes} bytes`);
 console.log(`candidate count: ${request.condensedAst.candidates.length}`);
 
 const result = await inferBoundaryManifestPatchWithOllama(request, { model });
-const manifest = decisionToManifest(result.decision);
+const manifest = decisionToManifest(result.decision, request);
 
 console.log("decision:");
 console.log(JSON.stringify(result.decision, null, 2));
@@ -39,6 +39,10 @@ for (const [component, prop] of expectedBoundaries) {
   const kind = manifest.components?.[component]?.props?.[prop];
   if (kind !== "event") {
     throw new Error(`expected Gemma to infer ${component}.${prop} = event, got ${kind ?? "missing"}`);
+  }
+  const evidence = manifest.components?.[component]?.evidence?.[prop];
+  if (!Array.isArray(evidence) || evidence.length < 2) {
+    throw new Error(`expected compiler to derive evidence for ${component}.${prop}`);
   }
 }
 
