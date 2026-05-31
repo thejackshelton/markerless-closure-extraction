@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "poc": "node scripts/poc.mjs",
+    "poc:gemma": "node scripts/ollama-poc.mjs",
     "test": "node scripts/test.mjs",
     "test:gemma": "pnpm ollama:smoke",
     "test:gemma:scenarios": "pnpm ollama:scenarios",

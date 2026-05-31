@@ -59,10 +59,13 @@ The live local inference path uses Ollama with `gemma4:e2b` by default:
 
 ```sh
 ollama pull gemma4:e2b
+pnpm poc:gemma
 pnpm ollama:smoke
 pnpm test:gemma
 pnpm bench:ollama
 ```
+
+`pnpm poc:gemma` reads `demo/react-app/src`, sends the Yuku-derived condensed AST packet to local Ollama/Gemma, writes the accepted manifest to `closure-boundaries.json`, and prints the model decision, compiler-derived evidence paths, and extractable closures. Use this after editing or generating more React code when you want to see the live local model output reflected in the manifest.
 
 `pnpm ollama:smoke` sends a Yuku-derived condensed AST packet to Gemma 4 E2B, verifies that the model returns the seven boundary entries from `App.tsx`, and verifies that the compiler can derive evidence paths from `propForwardingEdges`.
 
