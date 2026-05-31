@@ -1,5 +1,5 @@
 import { readdir, readFile, writeFile } from "node:fs/promises";
-import { extname, join, resolve } from "node:path";
+import { extname, join, resolve } from "pathe";
 import {
   DeterministicMockClassifier,
   discoverExtractableClosuresInProject,

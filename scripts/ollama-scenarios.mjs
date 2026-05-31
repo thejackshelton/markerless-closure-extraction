@@ -21,7 +21,7 @@ for (const scenario of scenarios) {
   const started = performance.now();
   const result = await inferBoundaryManifestPatchWithOllama(request, { model });
   const wallMs = performance.now() - started;
-  const actual = boundariesFromManifest(decisionToManifest(result.decision));
+  const actual = boundariesFromManifest(decisionToManifest(result.decision, request));
   const expected = expectedModelBoundaryEntries(scenario);
   const pass = entriesEqual(boundaryLabels(actual), expected);
 

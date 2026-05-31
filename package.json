@@ -12,6 +12,8 @@
     "bench:ollama": "node scripts/bench-ollama.mjs"
   },
   "dependencies": {
+    "pathe": "^2.0.3",
+    "ufo": "^1.6.4",
     "yuku-parser": "0.5.20"
   }
 }

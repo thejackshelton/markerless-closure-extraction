@@ -1,3 +1,5 @@
+import { withoutTrailingSlash } from "ufo";
+
 export const DEFAULT_OLLAMA_MODEL = "gemma4:e2b";
 
 export const BOUNDARY_MANIFEST_PATCH_SCHEMA = {
@@ -32,13 +34,9 @@ export const BOUNDARY_MANIFEST_PATCH_SCHEMA = {
               kind: {
                 type: "string",
                 enum: ["event", "server", "resource", "unknown"]
-              },
-              evidence: {
-                type: "array",
-                items: { type: "string" }
               }
             },
-            required: ["component", "prop", "kind", "evidence"]
+            required: ["component", "prop", "kind"]
           }
         }
       },
@@ -113,7 +111,7 @@ export function createBoundaryInferenceMessages(request) {
         "Do not infer boundaries from prop names, targetCandidateIds, or closure source without that complete path.",
         "Do not use kind=component; use event, server, resource, or unknown.",
         "Add one manifestPatch component entry for each targetCandidateId whose target prop reaches an event boundary.",
-        "Each manifestPatch entry evidence must be the compact path from Component.prop to hostTag.onEvent.",
+        "Return only component, prop, and kind for each manifestPatch entry; the compiler derives evidence from propForwardingEdges.",
         "If manifestPatch.components is non-empty, decision must be add_to_whitelist.",
         "Use unknown when the trace is missing, cyclic, or ambiguous.",
         "Keep reason under 12 words and trace entries as compact fact IDs.",
@@ -132,10 +130,7 @@ export function parseJsonObjectFromModelContent(content) {
   try {
     return JSON.parse(trimmed);
   } catch {
-    const withoutFence = trimmed
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
+    const withoutFence = stripJsonCodeFence(trimmed);
     try {
       return JSON.parse(withoutFence);
     } catch {
@@ -179,20 +174,31 @@ export function normalizeBoundaryDecision(value) {
   };
 }
 
-export function decisionToManifest(decision) {
+export function decisionToManifest(decision, request = null) {
   const manifest = { components: {} };
   if (decision.decision !== "add_to_whitelist") {
     return manifest;
   }
+  if (!request) {
+    throw new Error("Boundary manifest conversion requires the condensed AST request for evidence derivation.");
+  }
+
+  const findEvidencePath = createEvidencePathFinder(request);
 
   for (const entry of decision.manifestPatch.components) {
     if (entry.kind === "unknown") {
       continue;
     }
+    const evidence = findEvidencePath?.(entry.component, entry.prop);
+    if (entry.kind === "event" && !evidence) {
+      continue;
+    }
     manifest.components[entry.component] ??= { props: {} };
     manifest.components[entry.component].props[entry.prop] = entry.kind;
-    manifest.components[entry.component].evidence ??= {};
-    manifest.components[entry.component].evidence[entry.prop] = entry.evidence;
+    if (evidence) {
+      manifest.components[entry.component].evidence ??= {};
+      manifest.components[entry.component].evidence[entry.prop] = evidence;
+    }
   }
 
   return manifest;
@@ -226,17 +232,106 @@ function normalizeManifestComponent(value) {
     throw new Error(`Unsupported boundary kind: ${kind}`);
   }
 
-  const evidence = normalizeEvidencePath(value.evidence);
-
-  return { component, prop, kind, evidence };
+  return { component, prop, kind };
 }
 
-function normalizeEvidencePath(value) {
-  const rawParts = Array.isArray(value) ? value : [];
-  return rawParts
-    .flatMap((part) => String(part).split("->"))
-    .map((part) => part.trim().replace(/^c:[^:]+:/, ""))
-    .filter((part) => /^[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*$/.test(part));
+function createEvidencePathFinder(request) {
+  const edgesBySource = indexPropForwardingEdges(request?.condensedAst?.propForwardingEdges);
+
+  return (component, prop) => findEventEvidencePath(edgesBySource, component, prop, new Set());
+}
+
+function indexPropForwardingEdges(edges) {
+  const edgesBySource = new Map();
+
+  for (const edge of Array.isArray(edges) ? edges : []) {
+    if (!edge || typeof edge !== "object") {
+      continue;
+    }
+
+    const component = String(edge.component ?? "");
+    const prop = String(edge.prop ?? "");
+    if (!component || !prop) {
+      continue;
+    }
+
+    let propEdges = edgesBySource.get(component);
+    if (!propEdges) {
+      propEdges = new Map();
+      edgesBySource.set(component, propEdges);
+    }
+
+    let sourceEdges = propEdges.get(prop);
+    if (!sourceEdges) {
+      sourceEdges = [];
+      propEdges.set(prop, sourceEdges);
+    }
+
+    sourceEdges.push(edge);
+  }
+
+  return edgesBySource;
+}
+
+function findEventEvidencePath(edgesBySource, component, prop, seen) {
+  const seenKey = `${component}\u0000${prop}`;
+  if (seen.has(seenKey)) {
+    return null;
+  }
+
+  const nextSeen = new Set(seen);
+  nextSeen.add(seenKey);
+
+  for (const edge of edgesBySource.get(component)?.get(prop) ?? []) {
+    const sourceReference = componentPropReference(component, prop);
+    if (edge.targetKind === "host" && isHostEventProp(edge.targetProp)) {
+      return [sourceReference, componentPropReference(edge.targetTag, edge.targetProp)];
+    }
+
+    if (edge.targetKind === "component" && edge.targetComponent) {
+      const childPath = findEventEvidencePath(edgesBySource, edge.targetComponent, edge.targetProp, nextSeen);
+      if (childPath) {
+        return [sourceReference, ...childPath];
+      }
+    }
+  }
+
+  return null;
+}
+
+function componentPropReference(component, prop) {
+  return `${component}.${prop}`;
+}
+
+function isHostEventProp(prop) {
+  return typeof prop === "string" && prop.length > 2 && prop.startsWith("on") && isAsciiUppercaseCode(prop.charCodeAt(2));
+}
+
+function isAsciiUppercaseCode(code) {
+  return code >= 65 && code <= 90;
+}
+
+function stripJsonCodeFence(value) {
+  if (!value.startsWith("```")) {
+    return value;
+  }
+
+  const firstLineEnd = value.indexOf("\n");
+  if (firstLineEnd < 0) {
+    return value;
+  }
+
+  const language = value.slice(3, firstLineEnd).trim().toLowerCase();
+  if (language && language !== "json") {
+    return value;
+  }
+
+  const body = value.slice(firstLineEnd + 1).trim();
+  if (!body.endsWith("```")) {
+    return value;
+  }
+
+  return body.slice(0, -3).trim();
 }
 
 function parseJsonResponse(responseText) {
@@ -248,7 +343,7 @@ function parseJsonResponse(responseText) {
 }
 
 function normalizeEndpoint(endpoint) {
-  return endpoint.replace(/\/+$/, "");
+  return withoutTrailingSlash(String(endpoint));
 }
 
 function nanosToMs(value) {

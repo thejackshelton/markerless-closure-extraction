@@ -1,4 +1,4 @@
-import { dirname, extname, join, normalize, relative, resolve } from "node:path";
+import { dirname, extname, join, normalize, relative, resolve } from "pathe";
 import { langFromPath, parse, sourceTypeFromPath } from "yuku-parser";
 
 const NODE_METADATA_KEYS = new Set([
@@ -449,7 +449,7 @@ function resolveJsxTarget(graph, file, tag) {
     return { kind: "unknown" };
   }
 
-  if (/^[a-z]/.test(tag)) {
+  if (isHostJsxTag(tag)) {
     return { kind: "host", tag };
   }
 
@@ -478,6 +478,14 @@ function resolveJsxTarget(graph, file, tag) {
   }
 
   return { kind: "component", componentName: tag, file: null };
+}
+
+function isHostJsxTag(tag) {
+  return typeof tag === "string" && tag.length > 0 && isAsciiLowercaseCode(tag.charCodeAt(0));
+}
+
+function isAsciiLowercaseCode(code) {
+  return code >= 97 && code <= 122;
 }
 
 function inferBoundariesFromEdges(edges, classifier, classifierDecisions) {

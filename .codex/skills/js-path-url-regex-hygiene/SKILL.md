@@ -14,12 +14,12 @@ Use path/URL/regex tools only at clear boundaries:
 - Use `pathe` for filesystem paths, import-like paths, extensions, directory names, joins, relatives, and normalized slash behavior.
 - Use `ufo` for URLs, URL paths, query strings, route-like strings, and safe path joining when the value is URL-shaped rather than filesystem-shaped.
 - Use `magic-regexp` only when a regex is the right tool and a parser/structured helper is not available.
-- Avoid raw `RegExp` literals. Use them only when the project cannot add `magic-regexp` or existing local style already requires raw regex.
+- Avoid raw `RegExp` literals. Prefer structured checks, parser facts, small named predicates, or `magic-regexp`.
 
 Do not normalize paths or structured evidence with chains like:
 
 ```js
-String(value).split("->").map((part) => part.trim().replace(/^c:[^:]+:/, ""))
+String(value).split("->").map((part) => stripComponentPrefix(part.trim()))
 ```
 
 That mixes tokenization, path parsing, prefix handling, and validation in one fragile string pipeline. Prefer not creating that encoded string in the first place.
@@ -169,15 +169,7 @@ function parseComponentEvidence(segment) {
 }
 ```
 
-If `isSymbolReference` needs complex regex validation, prefer `magic-regexp`, but check the installed package docs/API before writing the expression. Keep the pattern isolated behind a named helper and tests.
-
-If the project cannot use `magic-regexp`, a raw regex must at least be named and isolated:
-
-```js
-const SYMBOL_REFERENCE_RE = /^[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*$/;
-```
-
-Do not inline that regex inside `filter`, `map`, or `replace` chains.
+If `isSymbolReference` needs complex pattern validation, prefer `magic-regexp`, but check the installed package docs/API before writing the expression. Keep the pattern isolated behind a named helper and tests. For simple checks, prefer explicit predicates such as `startsWith`, `endsWith`, `charCodeAt`, `indexOf`, and structured AST fields.
 
 ## Review Checklist
 

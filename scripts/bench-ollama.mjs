@@ -1,5 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
-import { extname, join, resolve } from "node:path";
+import { extname, join, resolve } from "pathe";
 import { createBoundaryInferenceRequest, parseProjectFiles } from "../src/pipeline.mjs";
 import { DEFAULT_OLLAMA_MODEL, inferBoundaryManifestPatchWithOllama } from "../src/ollama-classifier.mjs";
 

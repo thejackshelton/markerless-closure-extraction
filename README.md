@@ -57,7 +57,7 @@ pnpm ollama:smoke
 pnpm bench:ollama
 ```
 
-`pnpm ollama:smoke` sends a Yuku-derived condensed AST packet to Gemma 4 E2B and verifies that the model returns manifest patches with evidence paths for all seven closure target props in `App.tsx`.
+`pnpm ollama:smoke` sends a Yuku-derived condensed AST packet to Gemma 4 E2B, verifies that the model returns the seven boundary entries from `App.tsx`, and verifies that the compiler can derive evidence paths from `propForwardingEdges`.
 
 `pnpm bench:ollama` repeats the same request and prints wall time plus Ollama's prompt/output token rates. Override the model or run count with:
 
@@ -83,7 +83,7 @@ pnpm scenarios
 OLLAMA_MODEL=qwen3-coder:30b pnpm ollama:scenarios
 ```
 
-`pnpm scenarios` is deterministic and does not require a live model. It checks the full propagated manifest expected from the parser-first pipeline, validates evidence paths, and verifies that unknown candidates stay unknown. `pnpm ollama:scenarios` sends each scenario's condensed AST packet to a local Ollama model and compares the returned manifest patch with the expected target candidate boundaries for the live model contract.
+`pnpm scenarios` is deterministic and does not require a live model. It checks the full propagated manifest expected from the parser-first pipeline, validates compiler-derived evidence paths, and verifies that unknown candidates stay unknown. `pnpm ollama:scenarios` sends each scenario's condensed AST packet to a local Ollama model and compares the returned manifest patch with the expected target candidate boundaries for the live model contract.
 
 Expected manifest:
 
@@ -192,7 +192,7 @@ Expected manifest:
 }
 ```
 
-This manifest is the contract between inference and compilation. A watch-mode tool may update or propose changes to it, but a production build should treat it like normal source-controlled metadata. CI can verify that each accepted boundary has a persisted evidence path without calling a live model.
+This manifest is the contract between inference and compilation. A watch-mode tool may update or propose changes to it, but a production build should treat it like normal source-controlled metadata. The local model proposes `component`, `prop`, and `kind`; the compiler derives the evidence path from `propForwardingEdges` and can reject a proposed event boundary when that path is missing.
 
 ## Scope
 

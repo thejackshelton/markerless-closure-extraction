@@ -1,4 +1,4 @@
-import { join, resolve } from "node:path";
+import { join, resolve } from "pathe";
 import {
   createBoundaryInferenceRequest,
   discoverExtractableClosuresInProject,
@@ -593,11 +593,19 @@ export default function App() {
 
 export class HostEventClassifier {
   classifyBoundary(candidate) {
-    if (typeof candidate.attribute === "string" && /^on[A-Z]/.test(candidate.attribute)) {
+    if (isHostEventProp(candidate.attribute)) {
       return { kind: "event", confidence: "high" };
     }
     return { kind: "unknown", confidence: "none" };
   }
+}
+
+function isHostEventProp(prop) {
+  return typeof prop === "string" && prop.length > 2 && prop.startsWith("on") && isAsciiUppercaseCode(prop.charCodeAt(2));
+}
+
+function isAsciiUppercaseCode(code) {
+  return code >= 65 && code <= 90;
 }
 
 export function createScenarioProject(scenario) {
